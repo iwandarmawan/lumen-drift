@@ -24,9 +24,12 @@ whole grove and win; lose all 3 lives and the light fades.
 
 - `game/` — the whole game as static files: `index.html` plus ES modules
   under `game/src/` (config, seeded RNG, WebAudio synth sounds, keyboard +
-  mouse input, the simulation, the renderer, deterministic screenshot
-  scenes, and the main loop). No libraries, no build step, no network
-  requests — open `game/index.html` from any static server and play.
+  mouse input, the simulation, the renderer, the layered parallax grove
+  scenery, deterministic screenshot scenes, and the main loop). No
+  libraries, no build step, no network requests — open `game/index.html`
+  from any static server and play. The grove itself is drawn in code: a
+  cratered moon, three parallax tree lines, drifting mist, fireflies,
+  glowing mushrooms and grass, all from the run's seed.
 - `screenshots/` — 4 real renders of the game's own code: title, gameplay,
   level-up, and the victory screen (the first by name is the cover).
 - `main.ts` — the entry program (Node 22, standard library only): copies
