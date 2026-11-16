@@ -3,6 +3,7 @@
 // to draw it; all rules live here.
 import { VIEW, PLAYER, EMBERS, SHARDS, GAME } from './config.js';
 import { makeRng, pick, pickAngle } from './random.js';
+import { buildGrove } from './scenery.js';
 
 export function newWorld(seed) {
   const rng = makeRng(seed);
@@ -19,6 +20,7 @@ export function newWorld(seed) {
   return {
     rng,
     seed,
+    grove: buildGrove(seed), // decorative scenery, from its own RNG stream
     time: 0,
     state: 'title', // title | playing | paused | over | win
     score: 0,
@@ -132,7 +134,7 @@ function applyHit(world, shard, sounds) {
   world.combo = 0;
   world.comboTimer = 0;
   world.player.invulnerable = PLAYER.invulnerableTime;
-  world.shake = 14;
+  world.shake = 22; // a hard hit shakes the whole grove
   burst(world, world.player.x, world.player.y, '#ff6b81', 26, 260);
   sounds.hurt();
   if (world.lives <= 0) {
@@ -224,7 +226,7 @@ export function updateWorld(world, input, dt, sounds) {
       const gained = EMBERS.score * world.combo;
       world.score += gained;
       world.embersCollected += 1;
-      burst(world, e.x, e.y, '#ffc94d', 14, 200);
+      burst(world, e.x, e.y, '#ffc94d', 22, 200);
       floater(world, e.x, e.y - 12, `+${gained}`, '#ffe9a8');
       sounds.pickup(world.combo);
       // Every 30 embers the grove gives a life back (never above the start).
@@ -282,6 +284,7 @@ export function updateWorld(world, input, dt, sounds) {
       if (dashing) {
         world.shards.splice(i, 1);
         world.score += SHARDS.shatterScore;
+        world.shake = Math.max(world.shake, 7); // shattering kicks the camera
         burst(world, s.x, s.y, '#c65df0', 20, 260);
         floater(world, s.x, s.y - 12, `+${SHARDS.shatterScore}`, '#f0a6ff');
         sounds.shatter();

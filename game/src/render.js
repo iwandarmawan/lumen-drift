@@ -1,6 +1,7 @@
 // Lumen Drift — all drawing: the grove, the moth, the HUD and every
 // screen. The simulation never draws; this file never changes state.
 import { VIEW, COLORS, GAME, EMBERS, PLAYER } from './config.js';
+import { drawGroveBack, drawGroveFront } from './scenery.js';
 
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -38,6 +39,8 @@ function drawBackground(ctx, world) {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
+  // The moon, far trees and mist hang behind the hills.
+  drawGroveBack(ctx, world);
   // Soft hills at the bottom of the grove.
   ctx.fillStyle = '#141033';
   ctx.beginPath();
@@ -57,6 +60,8 @@ function drawBackground(ctx, world) {
   ctx.lineTo(1280, VIEW.height);
   ctx.closePath();
   ctx.fill();
+  // Mid and near trees, mushrooms, grass and fireflies in front.
+  drawGroveFront(ctx, world);
 }
 
 function drawEmber(ctx, e, time) {
@@ -64,6 +69,42 @@ function drawEmber(ctx, e, time) {
   const flicker = e.age > e.life - 2 ? (Math.sin(time * 14) > 0 ? 1 : 0.35) : 1;
   ctx.globalAlpha = flicker;
   glow(ctx, e.x, e.y, 42 * pulse, 'rgba(255,201,77,0.55)', 0.8);
+  // A thin halo ring that breathes with the ember.
+  ctx.globalAlpha = flicker * (0.35 + 0.2 * Math.sin(time * 3 + e.phase));
+  ctx.strokeStyle = 'rgba(255,220,130,0.9)';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, (e.r + 7) * pulse, 0, Math.PI * 2);
+  ctx.stroke();
+  // A little four-point sparkle that slowly turns.
+  const sa = time * 0.9 + e.phase;
+  const sr = e.r + 15;
+  ctx.globalAlpha = flicker * 0.85;
+  ctx.fillStyle = '#fff3c4';
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const a = sa + (i * Math.PI) / 2;
+    const x = e.x + Math.cos(a) * sr;
+    const y = e.y + Math.sin(a) * sr;
+    ctx.moveTo(x, y - 4);
+    ctx.lineTo(x + 1.4, y - 1.4);
+    ctx.lineTo(x + 4, y);
+    ctx.lineTo(x + 1.4, y + 1.4);
+    ctx.lineTo(x, y + 4);
+    ctx.lineTo(x - 1.4, y + 1.4);
+    ctx.lineTo(x - 4, y);
+    ctx.lineTo(x - 1.4, y - 1.4);
+    ctx.closePath();
+  }
+  ctx.fill();
+  // One mote orbiting the ember.
+  const oa = time * 2.2 + e.phase * 2;
+  ctx.globalAlpha = flicker * 0.9;
+  ctx.fillStyle = '#ffe9a8';
+  ctx.beginPath();
+  ctx.arc(e.x + Math.cos(oa) * 20, e.y + Math.sin(oa) * 14, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = flicker;
   ctx.fillStyle = COLORS.ember;
   ctx.beginPath();
   ctx.arc(e.x, e.y, e.r * pulse, 0, Math.PI * 2);
@@ -75,12 +116,49 @@ function drawEmber(ctx, e, time) {
   ctx.globalAlpha = 1;
 }
 
-function drawShard(ctx, s, time) {
-  glow(ctx, s.x, s.y, 46, 'rgba(198,93,240,0.5)', 0.7);
+function drawShard(ctx, s, world, time) {
+  const p = world.player;
+  const d = Math.hypot(p.x - s.x, p.y - s.y);
+  const isDart = s.kind === 'dart';
+  // Darts burn hotter and redder than drifters, so the two kinds read.
+  const aura = isDart ? 'rgba(255,77,140,0.55)' : 'rgba(198,93,240,0.5)';
+  glow(ctx, s.x, s.y, 46, aura, 0.7);
+  // A dart telegraphs its lunge: a bright glint as it spawns, and a faint
+  // aim line while it closes in on Luma.
+  if (isDart) {
+    if (s.age < 0.9) {
+      const ga = 1 - s.age / 0.9;
+      ctx.globalAlpha = ga;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      const gr = 10 + (1 - ga) * 8;
+      ctx.beginPath();
+      ctx.moveTo(s.x - gr, s.y);
+      ctx.lineTo(s.x + gr, s.y);
+      ctx.moveTo(s.x, s.y - gr);
+      ctx.lineTo(s.x, s.y + gr);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    } else if (d < 280 && world.state === 'playing') {
+      ctx.globalAlpha = 0.22 + 0.1 * Math.sin(time * 10);
+      ctx.strokeStyle = '#ff8fb0';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 8]);
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+  }
   ctx.save();
   ctx.translate(s.x, s.y);
   ctx.rotate(s.angle);
-  ctx.fillStyle = COLORS.shard;
+  // Dark outline so the crystal reads against the night.
+  ctx.strokeStyle = 'rgba(20,6,36,0.85)';
+  ctx.lineWidth = 2.5;
+  ctx.fillStyle = isDart ? '#e0447c' : COLORS.shard;
   ctx.beginPath();
   const r = s.r;
   ctx.moveTo(0, -r);
@@ -91,7 +169,19 @@ function drawShard(ctx, s, time) {
   ctx.lineTo(-r * 0.85, -r * 0.3);
   ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = COLORS.shardCore;
+  ctx.stroke();
+  // Facets: lines from the core to the points catch the light.
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, -r);
+  ctx.moveTo(0, 0);
+  ctx.lineTo(r * 0.6, r * 0.8);
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-r * 0.6, r * 0.8);
+  ctx.stroke();
+  ctx.fillStyle = isDart ? '#ffb3cd' : COLORS.shardCore;
   ctx.beginPath();
   ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
   ctx.fill();
@@ -100,38 +190,121 @@ function drawShard(ctx, s, time) {
 
 function drawPlayer(ctx, world) {
   const p = world.player;
-  // Fading trail.
-  for (let i = p.trail.length - 1; i >= 0; i--) {
+  const speed = Math.hypot(p.vx, p.vy);
+  const speedNorm = Math.min(1, speed / 600);
+  // A ribbon trail: tapering glow that follows the flight path.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < p.trail.length - 1; i++) {
     const t = p.trail[i];
-    const a = Math.max(0, 0.35 * (1 - t.age / 0.5) * (1 - i / p.trail.length));
+    const f = 1 - i / p.trail.length;
+    const a = Math.max(0, 0.4 * f * (1 - t.age / 0.5));
     if (a <= 0) continue;
     ctx.globalAlpha = a;
-    ctx.fillStyle = COLORS.player;
+    ctx.fillStyle = '#5fd8f2';
     ctx.beginPath();
-    ctx.arc(t.x, t.y, 9 * (1 - i / p.trail.length), 0, Math.PI * 2);
+    ctx.arc(t.x, t.y, 10 * f + 2, 0, Math.PI * 2);
     ctx.fill();
   }
+  ctx.restore();
   ctx.globalAlpha = 1;
   const blink = p.invulnerable > 0 && Math.sin(world.time * 22) > 0;
   if (blink) return; // invulnerability flicker
   const dashing = p.dashTimer > 0;
-  glow(ctx, p.x, p.y, dashing ? 110 : 84, 'rgba(142,240,255,0.5)', dashing ? 0.95 : 0.75);
+  // Dash shockwave: an expanding ring while the dash is in flight.
+  if (dashing) {
+    const prog = 1 - p.dashTimer / PLAYER.dashTime;
+    const rr = 22 + prog * 95;
+    ctx.globalAlpha = 0.75 * (1 - prog);
+    ctx.strokeStyle = '#bff6ff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, rr, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 0.4 * (1 - prog);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, rr * 0.7, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    // Speed streaks behind the moth while dashing.
+    const va = Math.atan2(p.vy, p.vx);
+    ctx.strokeStyle = 'rgba(190,246,255,0.7)';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 5; i++) {
+      const off = (i - 2) * 12;
+      const px = Math.cos(va + Math.PI / 2) * off;
+      const py = Math.sin(va + Math.PI / 2) * off;
+      const bx = p.x - Math.cos(va) * (26 + i * 7) + px;
+      const by = p.y - Math.sin(va) * (26 + i * 7) + py;
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx - Math.cos(va) * 26, by - Math.sin(va) * 26);
+      ctx.stroke();
+    }
+  }
+  const flicker = 0.85 + 0.15 * Math.sin(world.time * 23) + 0.07 * Math.sin(world.time * 41);
+  glow(ctx, p.x, p.y, dashing ? 110 : 84, 'rgba(142,240,255,0.5)', (dashing ? 0.95 : 0.75) * flicker);
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.rotate(p.angle + Math.PI / 2);
-  // Wings.
-  const flap = Math.sin(world.time * 16) * 0.35;
-  ctx.fillStyle = 'rgba(142,240,255,0.85)';
-  ctx.beginPath();
-  ctx.ellipse(-13, -4, 13, 7 + flap * 6, -0.5 - flap, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.ellipse(13, -4, 13, 7 + flap * 6, 0.5 + flap, 0, Math.PI * 2);
-  ctx.fill();
-  // Body: a little lantern moth.
-  ctx.fillStyle = COLORS.playerCore;
+  // Wings: an upper and a lower wing per side, veined, flapping harder
+  // the faster Luma flies.
+  const flap = Math.sin(world.time * 16) * (0.28 + 0.22 * speedNorm);
+  for (const side of [-1, 1]) {
+    const grad = ctx.createLinearGradient(0, -14, side * 26, 0);
+    grad.addColorStop(0, 'rgba(142,240,255,0.95)');
+    grad.addColorStop(1, 'rgba(94,190,235,0.55)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(side * 14, -5, 14, 8 + flap * 7, side * (0.55 + flap), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(120,220,245,0.7)';
+    ctx.beginPath();
+    ctx.ellipse(side * 11, 8, 9, 5 + flap * 4, side * (0.9 + flap), 0, Math.PI * 2);
+    ctx.fill();
+    // Wing veins.
+    ctx.strokeStyle = 'rgba(230,252,255,0.75)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(side * 4, -4);
+    ctx.lineTo(side * 24, -10 - flap * 6);
+    ctx.moveTo(side * 4, 0);
+    ctx.lineTo(side * 20, 4 + flap * 4);
+    ctx.stroke();
+  }
+  // Body: a little lantern moth — a warm amber lantern belly with a
+  // flickering flame inside, and a cool head.
+  const bodyGrad = ctx.createLinearGradient(0, -14, 0, 14);
+  bodyGrad.addColorStop(0, '#eafcff');
+  bodyGrad.addColorStop(0.45, '#ffe9a8');
+  bodyGrad.addColorStop(1, '#ffb84d');
+  ctx.fillStyle = bodyGrad;
   ctx.beginPath();
   ctx.ellipse(0, 0, 7, 13, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // The flame: a teardrop that flickers with the light.
+  ctx.fillStyle = `rgba(255,${Math.round(190 + 40 * flicker)},80,0.95)`;
+  ctx.beginPath();
+  ctx.moveTo(0, -9);
+  ctx.quadraticCurveTo(4.5 * flicker, -2, 0, 6);
+  ctx.quadraticCurveTo(-4.5 * flicker, -2, 0, -9);
+  ctx.closePath();
+  ctx.fill();
+  // Antennae with glowing tips.
+  ctx.strokeStyle = '#8ef0ff';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-3, -11);
+  ctx.quadraticCurveTo(-7, -20, -11, -24);
+  ctx.moveTo(3, -11);
+  ctx.quadraticCurveTo(7, -20, 11, -24);
+  ctx.stroke();
+  ctx.fillStyle = '#ffe9a8';
+  ctx.beginPath();
+  ctx.arc(-11, -24, 2, 0, Math.PI * 2);
+  ctx.arc(11, -24, 2, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = '#0b1026';
   ctx.beginPath();
@@ -150,10 +323,14 @@ function drawParticles(ctx, world) {
     ctx.fill();
   }
   ctx.globalAlpha = 1;
-  ctx.font = 'bold 17px system-ui, sans-serif';
+  ctx.font = 'bold 19px system-ui, sans-serif';
   ctx.textAlign = 'center';
   for (const f of world.floaters) {
     ctx.globalAlpha = Math.max(0, 1 - f.age / f.life);
+    // A dark outline keeps the popup readable over any background.
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(8,8,26,0.85)';
+    ctx.strokeText(f.text, f.x, f.y);
     ctx.fillStyle = f.color;
     ctx.fillText(f.text, f.x, f.y);
   }
@@ -178,6 +355,8 @@ function drawHud(ctx, world) {
   // Top bar.
   ctx.fillStyle = 'rgba(8,8,24,0.55)';
   ctx.fillRect(0, 0, VIEW.width, 56);
+  ctx.fillStyle = 'rgba(255,201,77,0.35)';
+  ctx.fillRect(0, 56, VIEW.width, 2);
   ctx.fillStyle = COLORS.text;
   ctx.font = 'bold 22px system-ui, sans-serif';
   ctx.textAlign = 'left';
@@ -190,6 +369,13 @@ function drawHud(ctx, world) {
   ctx.font = 'bold 20px system-ui, sans-serif';
   ctx.fillText(`LEVEL ${world.level} / ${GAME.winLevel}`, VIEW.width / 2, 35);
   ctx.font = '15px system-ui, sans-serif';
+  ctx.fillStyle = COLORS.dim;
+  // A little glowing ember marks the goal count.
+  glow(ctx, VIEW.width / 2 - 78, 47, 12, 'rgba(255,201,77,0.6)', 0.8);
+  ctx.fillStyle = COLORS.ember;
+  ctx.beginPath();
+  ctx.arc(VIEW.width / 2 - 78, 47, 4, 0, Math.PI * 2);
+  ctx.fill();
   ctx.fillStyle = COLORS.dim;
   ctx.fillText(`embers ${world.embersCollected} / ${GAME.emberGoal}`, VIEW.width / 2, 52);
   // Lives.
@@ -304,10 +490,20 @@ export function drawWorld(ctx, world) {
   }
   drawBackground(ctx, world);
   for (const e of world.embers) drawEmber(ctx, e, world.time);
-  for (const s of world.shards) drawShard(ctx, s, world.time);
+  for (const s of world.shards) drawShard(ctx, s, world, world.time);
   if (world.state !== 'title') drawPlayer(ctx, world);
   drawParticles(ctx, world);
   ctx.restore();
+
+  // A gentle vignette pulls the eye to the middle of the grove.
+  const vig = ctx.createRadialGradient(
+    VIEW.width / 2, VIEW.height / 2, VIEW.height * 0.42,
+    VIEW.width / 2, VIEW.height / 2, VIEW.height * 0.95,
+  );
+  vig.addColorStop(0, 'rgba(5,4,18,0)');
+  vig.addColorStop(1, 'rgba(5,4,18,0.42)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, VIEW.width, VIEW.height);
 
   if (world.state === 'playing' || world.state === 'paused') drawHud(ctx, world);
   if (world.state === 'title') {
@@ -320,14 +516,24 @@ export function drawWorld(ctx, world) {
   if (world.state === 'paused') drawPaused(ctx);
   if (world.banner && world.banner.timer > 0 && (world.state === 'playing')) {
     const a = Math.min(1, world.banner.timer);
+    // A soft pill behind the banner and a glowing underline that drains
+    // with the banner's remaining time.
+    const slide = world.banner.timer > 1.9 ? (world.banner.timer - 1.9) * 60 : 0;
+    ctx.globalAlpha = a * 0.55;
+    ctx.fillStyle = 'rgba(8,8,26,0.7)';
+    roundRect(ctx, VIEW.width / 2 - 260, 128 - slide, 520, 92, 16);
+    ctx.fill();
     ctx.globalAlpha = a;
     ctx.textAlign = 'center';
     ctx.fillStyle = COLORS.text;
     ctx.font = 'bold 44px system-ui, sans-serif';
-    ctx.fillText(world.banner.text, VIEW.width / 2, 170);
+    ctx.fillText(world.banner.text, VIEW.width / 2, 170 - slide);
     ctx.font = '19px system-ui, sans-serif';
     ctx.fillStyle = COLORS.dim;
-    ctx.fillText(world.banner.sub, VIEW.width / 2, 204);
+    ctx.fillText(world.banner.sub, VIEW.width / 2, 204 - slide);
+    const bw = 300 * Math.min(1, world.banner.timer / 2.2);
+    ctx.fillStyle = COLORS.ember;
+    ctx.fillRect(VIEW.width / 2 - bw / 2, 214 - slide, bw, 3);
     ctx.globalAlpha = 1;
   }
 }
