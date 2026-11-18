@@ -1,90 +1,115 @@
-// WebAudio synthesis only: no audio files, no network. Every sound is a
-// small oscillator/noise envelope built on first user gesture (browsers
-// require a gesture before AudioContext may start).
-export class SoundBank {
-  constructor() {
-    this.context = null;
-    this.muted = false;
-    this.musicTimer = null;
-    this.musicStep = 0;
-  }
+// Lumen Drift — tiny synthesised sounds, no audio files.
+// Every sound is a few oscillators through one gain node, made on the fly.
 
-  unlock() {
-    if (!this.context) {
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (!Ctx) return;
-      this.context = new Ctx();
-    }
-    if (this.context.state === 'suspended') this.context.resume();
-  }
+let audioCtx = null;
+let muted = false;
+let masterGain = null;
 
-  toggleMute() {
-    this.muted = !this.muted;
-    return this.muted;
+function ensureCtx() {
+  if (audioCtx) {
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
   }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  audioCtx = new AC();
+  masterGain = audioCtx.createGain();
+  masterGain.gain.value = 0.22;
+  masterGain.connect(audioCtx.destination);
+  return audioCtx;
+}
 
-  tone(freq, dur, type, vol, slideTo) {
-    if (!this.context || this.muted) return;
-    const now = this.context.currentTime;
-    const osc = this.context.createOscillator();
-    const gain = this.context.createGain();
-    osc.type = type || 'sine';
-    osc.frequency.setValueAtTime(freq, now);
-    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, now + dur);
-    gain.gain.setValueAtTime(vol || 0.12, now);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-    osc.connect(gain).connect(this.context.destination);
-    osc.start(now);
-    osc.stop(now + dur + 0.02);
-  }
+function tone(freq, dur, type, vol, slideTo, delay) {
+  if (muted) return;
+  const ctx = ensureCtx();
+  if (!ctx || !masterGain) return;
+  const t0 = ctx.currentTime + (delay || 0);
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type || 'sine';
+  osc.frequency.setValueAtTime(freq, t0);
+  if (slideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(30, slideTo), t0 + dur);
+  gain.gain.setValueAtTime(0, t0);
+  gain.gain.linearRampToValueAtTime(vol || 0.5, t0 + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  osc.connect(gain);
+  gain.connect(masterGain);
+  osc.start(t0);
+  osc.stop(t0 + dur + 0.05);
+}
 
-  pickup(combo) {
-    // Pitch climbs with the combo so a streak feels like a melody.
-    const base = 520 * Math.pow(1.122, Math.min(combo, 8));
-    this.tone(base, 0.14, 'sine', 0.14);
-    this.tone(base * 1.5, 0.2, 'sine', 0.07);
-  }
+function noiseBurst(dur, vol, lowpass) {
+  if (muted) return;
+  const ctx = ensureCtx();
+  if (!ctx || !masterGain) return;
+  const len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = lowpass || 1200;
+  const gain = ctx.createGain();
+  gain.gain.value = vol || 0.3;
+  src.connect(filter);
+  filter.connect(gain);
+  gain.connect(masterGain);
+  src.start();
+}
 
-  dash() {
-    this.tone(320, 0.18, 'sawtooth', 0.05, 900);
-  }
+export function unlockAudio() {
+  ensureCtx();
+}
 
-  shatter() {
-    this.tone(180, 0.16, 'square', 0.09, 60);
-    this.tone(740, 0.1, 'triangle', 0.08, 220);
-  }
+export function toggleMute() {
+  muted = !muted;
+  return muted;
+}
 
-  hurt() {
-    this.tone(220, 0.3, 'sawtooth', 0.14, 55);
-  }
+export function isMuted() {
+  return muted;
+}
 
-  levelUp() {
-    [523, 659, 784, 1047].forEach((f, i) => {
-      setTimeout(() => this.tone(f, 0.22, 'triangle', 0.12), i * 90);
-    });
-  }
+// A bright two-note chime, rising a little with the combo multiplier.
+export function playPickup(comboMult) {
+  const base = 620 + (comboMult - 1) * 70;
+  tone(base, 0.14, 'sine', 0.5);
+  tone(base * 1.5, 0.2, 'sine', 0.35, null, 0.05);
+}
 
-  win() {
-    [523, 659, 784, 1047, 1319].forEach((f, i) => {
-      setTimeout(() => this.tone(f, 0.35, 'triangle', 0.13), i * 120);
-    });
-  }
+// A soft airy sweep for the dash.
+export function playDash() {
+  tone(300, 0.22, 'triangle', 0.4, 900);
+  noiseBurst(0.18, 0.18, 2400);
+}
 
-  lose() {
-    [392, 330, 262, 196].forEach((f, i) => {
-      setTimeout(() => this.tone(f, 0.3, 'sine', 0.11), i * 140);
-    });
-  }
+// A dull thud plus a falling tone when a hazard hits.
+export function playHurt() {
+  tone(220, 0.3, 'sawtooth', 0.4, 70);
+  noiseBurst(0.2, 0.3, 500);
+}
 
-  startMusic() {
-    if (!this.context || this.musicTimer) return;
-    // A slow, quiet pentatonic drift: one soft note every 0.9 s.
-    const scale = [220, 262, 294, 330, 392, 440];
-    this.musicTimer = setInterval(() => {
-      if (this.muted) return;
-      const f = scale[this.musicStep % scale.length];
-      this.musicStep += 1;
-      this.tone(f, 0.8, 'sine', 0.035);
-    }, 900);
-  }
+// A soft two-note chime when a new garden opens.
+export function playLevelStart() {
+  tone(392, 0.2, 'sine', 0.35);
+  tone(587, 0.3, 'sine', 0.35, null, 0.08);
+}
+
+// A rising arpeggio when a level is cleared.
+export function playLevelClear() {
+  [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.25, 'sine', 0.45, null, i * 0.09));
+}
+
+// A longer fanfare for winning the whole game.
+export function playWin() {
+  [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) =>
+    tone(f, 0.3, 'triangle', 0.45, null, i * 0.11),
+  );
+}
+
+// A low descending line for game over.
+export function playGameOver() {
+  [392, 330, 262, 196].forEach((f, i) => tone(f, 0.35, 'sine', 0.4, null, i * 0.14));
 }
