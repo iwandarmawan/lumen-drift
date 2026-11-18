@@ -1,20 +1,53 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="data:,">
-<title>Lumen Drift — a lantern-moth arcade game</title>
-<style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1026; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-</style>
-</head>
-<body>
-<canvas id="game" aria-label="Lumen Drift: steer Luma the lantern moth, collect glowing embers, dodge thorn-shards, dash to shatter them"></canvas>
-<p id="status" role="status" aria-live="polite"></p>
-<script type="module" src="./src/main.js"></script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>Lumen Drift — a lantern moth arcade game</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #0b0718;
+        height: 100%;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: Georgia, 'Times New Roman', serif;
+      }
+      #wrap {
+        width: min(1280px, 100vw);
+        aspect-ratio: 16 / 9;
+        position: relative;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+        background: #1b1440;
+        cursor: pointer;
+      }
+      #hint {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: -26px;
+        text-align: center;
+        color: #8d7fb8;
+        font-size: 13px;
+        letter-spacing: 0.04em;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="wrap">
+      <canvas id="game" width="1280" height="720"></canvas>
+      <div id="hint">WASD / arrows to fly &nbsp;·&nbsp; Shift / Space to dash &nbsp;·&nbsp; P to pause &nbsp;·&nbsp; M to mute</div>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
 </html>
